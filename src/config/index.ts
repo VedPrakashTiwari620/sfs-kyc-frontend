@@ -14,10 +14,11 @@ export type AppEnv = {
   MATCH_THRESHOLD: string;
 };
 
-// Default to localhost for web dev, can be overridden by .env
+// Production backend on Render
 const DEFAULT_API = Platform.OS === 'web'
-  ? 'http://localhost:3000'
-  : 'http://10.0.2.2:3000'; // Android emulator localhost
+  ? 'https://sfs-kyc-backend.onrender.com'
+  : 'https://sfs-kyc-backend.onrender.com';
+
 
 export const env = {
   apiBaseUrl: String(extra.API_BASE_URL && extra.API_BASE_URL !== 'https://example.com/api' ? extra.API_BASE_URL : DEFAULT_API),
