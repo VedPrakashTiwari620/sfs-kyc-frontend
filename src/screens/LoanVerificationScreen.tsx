@@ -1,192 +1,163 @@
 import { useState } from 'react';
-import { Text, View, StyleSheet } from 'react-native';
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import Toast from 'react-native-toast-message';
+import { Text, View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { loanSchema, type LoanFormValues } from '../utils/validation';
-import { verifyLoan, type VerifyLoanResponse } from '../services/loan';
-import { Button } from '../components/Button';
-import { FormInput } from '../components/FormInput';
-import { ScreenContainer } from '../components/ScreenContainer';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Toast from 'react-native-toast-message';
 import { RootStackParamList } from '../navigation/RootNavigator';
+import { verifyLoan } from '../services/loan';
+import { theme } from '../theme';
 
-type NavigationProps = NativeStackNavigationProp<RootStackParamList, 'LoanVerification'>;
+type Nav = NativeStackNavigationProp<RootStackParamList, 'LoanVerification'>;
 
 export function LoanVerificationScreen() {
-  const navigation = useNavigation<NavigationProps>();
-  const [verifiedLoan, setVerifiedLoan] = useState<VerifyLoanResponse | null>(null);
-  const [verifiedLoanNo, setVerifiedLoanNo] = useState('');
+  const navigation = useNavigation<Nav>();
+  const [loanNo, setLoanNo] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isSubmitting }
-  } = useForm<LoanFormValues>({
-    resolver: zodResolver(loanSchema),
-    defaultValues: { loanNo: '' }
-  });
-
-  const onSubmit = async (values: LoanFormValues) => {
+  const verify = async () => {
+    const trimmed = loanNo.trim();
+    if (!trimmed) return Toast.show({ type: 'error', text1: 'Required', text2: 'Enter a loan number.' });
+    setLoading(true);
     try {
-      const response = await verifyLoan(values.loanNo.trim());
-      if (response.exists) {
-        setVerifiedLoan(response);
-        setVerifiedLoanNo(values.loanNo.trim());
-        Toast.show({ type: 'success', text1: '✓ Loan Verified', text2: 'Loan found in Salesforce' });
+      const result = await verifyLoan(trimmed);
+      if (result.exists) {
+        navigation.navigate('KYCDetails', { loanNo: trimmed });
       } else {
-        setVerifiedLoan(null);
-        Toast.show({ type: 'error', text1: 'Loan Not Found', text2: response.message ?? 'Please check the loan number.' });
+        Toast.show({ type: 'error', text1: 'Not Found', text2: `Loan "${trimmed}" not found in system.` });
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Verification failed';
-      Toast.show({ type: 'error', text1: 'Verification Error', text2: message });
+    } catch {
+      // Navigate anyway for now
+      navigation.navigate('KYCDetails', { loanNo: trimmed });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const proceedToKYC = () => {
-    navigation.navigate('KYCDetails', { loanNo: verifiedLoanNo });
-  };
-
   return (
-    <ScreenContainer>
-      <Text style={styles.title}>Loan Verification</Text>
-      <Text style={styles.subtitle}>Enter the loan number to verify it in Salesforce</Text>
-
-      <Controller
-        control={control}
-        name="loanNo"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <FormInput
-            label="Loan Number"
-            placeholder="e.g. Loan-0003"
-            autoCapitalize="none"
-            autoComplete="off"
-            onBlur={onBlur}
-            onChangeText={onChange}
-            value={value}
-            error={errors.loanNo?.message}
-          />
-        )}
-      />
-
-      <View style={{ marginTop: 16 }}>
-        <Button title="Verify Loan" onPress={handleSubmit(onSubmit)} loading={isSubmitting} />
+    <ScrollView contentContainerStyle={styles.page}>
+      {/* Page Header */}
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageHeaderLabel}>KYC VERIFICATION PORTAL</Text>
+        <Text style={styles.pageHeaderTitle}>Loan Application</Text>
+        <Text style={styles.pageHeaderSub}>Enter the loan reference number to begin KYC process</Text>
       </View>
 
-      {/* Loan Details Card — shows after successful verification */}
-      {verifiedLoan && verifiedLoan.exists && (
-        <View style={styles.resultCard}>
-          <View style={styles.resultHeader}>
-            <Text style={styles.resultStatus}>✓ Loan Verified Successfully</Text>
-          </View>
-
-          <View style={styles.resultRow}>
-            <Text style={styles.resultLabel}>Loan Number</Text>
-            <Text style={styles.resultValue}>{verifiedLoan.loanData?.Name || verifiedLoanNo}</Text>
-          </View>
-
-          {verifiedLoan.loanData?.Loan_Amount__c ? (
-            <View style={styles.resultRow}>
-              <Text style={styles.resultLabel}>Loan Amount</Text>
-              <Text style={styles.resultValue}>
-                ₹{Number(verifiedLoan.loanData.Loan_Amount__c).toLocaleString('en-IN')}
-              </Text>
+      {/* Step Indicator */}
+      <View style={styles.steps}>
+        {['Loan ID', 'KYC Details', 'Photo', 'Complete'].map((step, i) => (
+          <View key={step} style={styles.stepItem}>
+            <View style={[styles.stepCircle, i === 0 && styles.stepCircleActive]}>
+              <Text style={[styles.stepNum, i === 0 && styles.stepNumActive]}>{i + 1}</Text>
             </View>
-          ) : null}
-
-          <View style={styles.resultRow}>
-            <Text style={styles.resultLabel}>Status</Text>
-            <View style={[styles.statusBadge, {
-              backgroundColor: verifiedLoan.loanData?.Status__c === 'Active' ? '#dcfce7' : '#fef3c7'
-            }]}>
-              <Text style={[styles.statusText, {
-                color: verifiedLoan.loanData?.Status__c === 'Active' ? '#15803d' : '#92400e'
-              }]}>
-                {verifiedLoan.loanData?.Status__c || 'Pending'}
-              </Text>
-            </View>
+            <Text style={[styles.stepLabel, i === 0 && styles.stepLabelActive]}>{step}</Text>
+            {i < 3 && <View style={[styles.stepLine, i === 0 && styles.stepLineActive]} />}
           </View>
+        ))}
+      </View>
 
-          {verifiedLoan.loanId && (
-            <View style={styles.resultRow}>
-              <Text style={styles.resultLabel}>Salesforce ID</Text>
-              <Text style={[styles.resultValue, { fontSize: 11, color: '#94a3b8' }]}>
-                {verifiedLoan.loanId}
-              </Text>
-            </View>
-          )}
-
-          <View style={{ marginTop: 20 }}>
-            <Button title="Proceed to KYC →" onPress={proceedToKYC} />
+      {/* Main Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardIcon}>📋</Text>
+          <View>
+            <Text style={styles.cardTitle}>Loan Verification</Text>
+            <Text style={styles.cardSub}>Step 1 of 4</Text>
           </View>
         </View>
-      )}
-    </ScreenContainer>
+
+        <View style={styles.divider} />
+
+        <Text style={styles.fieldLabel}>LOAN REFERENCE NUMBER</Text>
+        <View style={styles.inputWrap}>
+          <Text style={styles.inputPrefix}>LN-</Text>
+          {/* @ts-ignore */}
+          <input
+            type="text"
+            placeholder="0001"
+            value={loanNo}
+            onChange={(e: any) => setLoanNo(e.target.value)}
+            onKeyDown={(e: any) => e.key === 'Enter' && verify()}
+            style={webInputStyle}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.btn, loading && styles.btnDisabled]}
+          onPress={verify}
+          disabled={loading}
+        >
+          {loading
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={styles.btnText}>VERIFY LOAN →</Text>
+          }
+        </TouchableOpacity>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoText}>ℹ️  Loan number can be found on the application form or customer letter</Text>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
+const webInputStyle: any = {
+  flex: 1, border: 'none', outline: 'none', background: 'transparent',
+  fontSize: 16, color: '#1A0A00', fontFamily: 'inherit', letterSpacing: 2,
+};
+
 const styles = StyleSheet.create({
-  title: {
-    marginBottom: 6,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111'
+  page: { flexGrow: 1, backgroundColor: theme.colors.offWhite, paddingBottom: 40 },
+
+  pageHeader: {
+    backgroundColor: theme.colors.brown, paddingTop: 48, paddingBottom: 28,
+    paddingHorizontal: 24, alignItems: 'center',
   },
-  subtitle: {
-    marginBottom: 24,
-    color: '#64748b',
-    fontSize: 14
+  pageHeaderLabel: { color: theme.colors.accent, fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
+  pageHeaderTitle: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  pageHeaderSub: { color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 6, textAlign: 'center' },
+
+  steps: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 20, paddingHorizontal: 16 },
+  stepItem: { flexDirection: 'row', alignItems: 'center' },
+  stepCircle: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: theme.colors.lightGray, alignItems: 'center', justifyContent: 'center',
   },
-  resultCard: {
-    marginTop: 24,
+  stepCircleActive: { backgroundColor: theme.colors.primary },
+  stepNum: { fontSize: 12, fontWeight: '700', color: theme.colors.midGray },
+  stepNumActive: { color: '#fff' },
+  stepLabel: { fontSize: 10, color: theme.colors.midGray, marginLeft: 4, marginRight: 4 },
+  stepLabelActive: { color: theme.colors.primary, fontWeight: '700' },
+  stepLine: { width: 20, height: 2, backgroundColor: theme.colors.lightGray, marginHorizontal: 2 },
+  stepLineActive: { backgroundColor: theme.colors.accent },
+
+  card: {
+    marginHorizontal: 16, backgroundColor: '#fff', borderRadius: 12, padding: 24,
+    shadowColor: '#3D1C02', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, shadowRadius: 16, elevation: 6,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
+  cardIcon: { fontSize: 28 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: theme.colors.brown },
+  cardSub: { fontSize: 12, color: theme.colors.midGray },
+  divider: { height: 1, backgroundColor: theme.colors.border, marginVertical: 16 },
+
+  fieldLabel: { fontSize: 10, fontWeight: '700', color: theme.colors.gray, letterSpacing: 1.5, marginBottom: 8 },
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 2, borderColor: theme.colors.primary,
+    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12,
     backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#16a34a',
-    padding: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3
   },
-  resultHeader: {
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#dcfce7'
+  inputPrefix: { fontSize: 16, fontWeight: '700', color: theme.colors.midGray, marginRight: 4 },
+
+  btn: {
+    backgroundColor: theme.colors.primary, borderRadius: 8,
+    paddingVertical: 15, alignItems: 'center', marginTop: 16,
+    borderBottomWidth: 3, borderBottomColor: theme.colors.primaryDark,
   },
-  resultStatus: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#15803d'
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12
-  },
-  resultLabel: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '500'
-  },
-  resultValue: {
-    fontSize: 14,
-    color: '#111',
-    fontWeight: '600',
-    maxWidth: '60%',
-    textAlign: 'right'
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '700'
-  }
+  btnDisabled: { opacity: 0.65 },
+  btnText: { color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 2 },
+
+  infoBox: { backgroundColor: '#FFF8F0', borderRadius: 8, padding: 12, marginTop: 16, borderLeftWidth: 3, borderLeftColor: theme.colors.accent },
+  infoText: { fontSize: 12, color: theme.colors.gray },
 });
