@@ -38,13 +38,9 @@ export function KYCDetailsScreen() {
       console.warn('[KYC] Save to backend failed, continuing with local ID:', err);
     }
 
-    // Always navigate to QR scan, regardless of API result
-    navigation.navigate('AadhaarQRScan', {
-      loanNo,
-      kycId,
-      aadhaarNumber: values.aadhaarNumber,
-      address: values.address
-    });
+    // Always navigate to PhotoCapture, regardless of API result
+    navigation.navigate('PhotoCapture', { loanNo });
+
   };
 
 
