@@ -22,10 +22,11 @@ export function AadhaarQRScanScreen() {
   const [manualQrValue, setManualQrValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Web camera refs and state — always declared (Rules of Hooks)
+  // Web camera refs
   const videoRef = useRef<any>(null);
   const canvasRef = useRef<any>(null);
   const streamRef = useRef<any>(null);
+  const jsQRRef = useRef<any>(null); // cached jsQR module
   const [cameraActive, setCameraActive] = useState(false);
   const [pendingStream, setPendingStream] = useState<any>(null);
   const [cameraError, setCameraError] = useState('');
@@ -33,7 +34,11 @@ export function AadhaarQRScanScreen() {
 
   // Native camera permission
   useEffect(() => {
-    if (isWeb) return;
+    if (isWeb) {
+      // Pre-load jsQR for faster scanning
+      import('jsqr').then(m => { jsQRRef.current = m.default; });
+      return;
+    }
     (async () => {
       const { BarCodeScanner } = require('expo-barcode-scanner');
       const { status } = await BarCodeScanner.requestPermissionsAsync();
@@ -54,26 +59,28 @@ export function AadhaarQRScanScreen() {
   useEffect(() => {
     if (!scanning || !isWeb) return;
     let animFrame: number;
-    const tick = async () => {
+    const tick = () => {
       if (!videoRef.current || !canvasRef.current) { animFrame = requestAnimationFrame(tick); return; }
       const video = videoRef.current;
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) { animFrame = requestAnimationFrame(tick); return; }
+      if (video.readyState < 2) { animFrame = requestAnimationFrame(tick); return; }
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
       const ctx = canvas.getContext('2d');
       if (!ctx) { animFrame = requestAnimationFrame(tick); return; }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       try {
-        const jsQR = (await import('jsqr')).default;
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        if (code?.data) {
-          stopCamera();
-          const parsed = parseQrValue(code.data);
-          setScannedData(parsed);
-          Toast.show({ type: 'success', text1: '✓ QR Scanned!', text2: 'Aadhaar QR captured successfully.' });
-          return;
+        const jsQR = jsQRRef.current;
+        if (jsQR) {
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
+          if (code?.data) {
+            stopCamera();
+            const parsed = parseQrValue(code.data);
+            setScannedData(parsed);
+            Toast.show({ type: 'success', text1: '✓ QR Scanned!', text2: 'Aadhaar QR captured successfully.' });
+            return;
+          }
         }
       } catch { /* continue */ }
       animFrame = requestAnimationFrame(tick);

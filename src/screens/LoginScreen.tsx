@@ -15,11 +15,17 @@ import { RootStackParamList } from '../navigation/RootNavigator';
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
-  const { setToken, loadToken } = useAuthStore();
+  const { setToken, loadToken, token } = useAuthStore();
 
   useEffect(() => {
-    loadToken();
-  }, [loadToken]);
+    loadToken().then(() => {
+      // If token already exists (persisted session) → skip login
+      const stored = useAuthStore.getState().token;
+      if (stored) {
+        navigation.reset({ index: 0, routes: [{ name: 'LoanVerification' }] });
+      }
+    });
+  }, []);
 
   const {
     control,
